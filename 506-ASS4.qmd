@@ -1,0 +1,618 @@
+---
+title: "506 ASS4"
+author: "Manning Wu"
+format: pdf
+---
+
+## Q1
+
+```{r}
+#| warning: false
+library(tidyverse)
+library(nycflights13)
+
+# Make all tables print all rows.
+options(dplyr.print_max = 1e9)
+```
+
+```{r}
+# Import the dataset
+data("airports")
+data("airlines")
+data("flights")
+data("planes")
+data("weather")
+```
+
+### (a)
+
+```{r}
+# Group `flights` by origin, then calculate the mean and median of `dep_delay`
+flights_group_airport <- flights %>%
+  group_by(origin) %>%
+  summarize(mean_of_dep_delay = mean(dep_delay,na.rm = TRUE), 
+            median_of_dep_delay = median(dep_delay,na.rm = TRUE))
+
+# Combine airport names with its codes, then generate the tibble
+flights_group_airport_tib <- right_join(airports, flights_group_airport, 
+                                        by = join_by(faa == origin)) %>%
+  select(name, mean_of_dep_delay, median_of_dep_delay)
+
+# Output the tibble
+flights_group_airport_tib
+```
+
+
+```{r}
+# Group `flights` by destination and then calculate the number of flights for each destination
+flights_group_dest <- flights %>%
+  group_by(dest) %>%
+  dplyr::count()
+
+# Select the destination that fly for >= 10 times
+flights_group_valid_dest <- right_join(flights_group_dest, flights, 
+                                        by = 'dest') %>%
+  filter(n >= 10)
+
+# Group `flights` by destination, then calculate the mean and median of `arr_delay`
+flights_group_dest_tib <- flights_group_valid_dest %>%
+  summarize(mean_of_arr_delay = mean(arr_delay,na.rm = TRUE), 
+            median_of_arr_delay = median(arr_delay,na.rm = TRUE))
+
+# Combine airport names with its codes, then generate the tibble
+flights_group_dest_tib <- right_join(airports, flights_group_dest_tib, 
+                                        by = join_by(faa == dest)) %>%
+  arrange(-mean_of_arr_delay) %>%
+  # There exists missing data in `name`, I search in the internet based on 
+  # their `faa` to fix the problem. Details are in the References.
+  mutate(name = ifelse(row_number() == 51, "Rafael Hernández Airport", name),
+         name = ifelse(row_number() == 56, "Mercedita International Airport", name),
+         name = ifelse(row_number() == 87, "Luis Muñoz Marín International Airport", name),
+         name = ifelse(row_number() == 100, "Cyril E. King Airport", name)) %>%
+  select(name, mean_of_arr_delay, median_of_arr_delay)
+
+# Output the tibble:
+flights_group_dest_tib
+```
+
+### (b)
+
+```{r}
+#| error: false
+
+# Mutate a new column for saving the speed in mph of each flight:
+# Since we don't know the date of arrival for flight, it is better for us to use `air_time` 
+# as time instead of the difference between `dep_time` and `arr_time`.
+flights_speed <- flights %>% mutate(speed = distance/(air_time/60))
+
+# When calculate the average of speed for each plane, we drop all missing values.
+flights_speed_group_plane <- flights_speed %>% group_by(tailnum) %>%
+  summarize(mean_of_speed = mean(speed,na.rm = TRUE)) %>%
+  arrange(-mean_of_speed) # in descending order
+
+# Find the fastest airplane:
+fastest_airplane <- flights_speed_group_plane %>% 
+  select(tailnum) %>% 
+  slice(1) %>%
+  as.character
+
+# Find the largest average of speed:
+fastest_speed <- flights_speed_group_plane %>% 
+  select(mean_of_speed) %>% 
+  slice(1) %>%
+  as.numeric
+
+# Select flights of this airplane (contain missing value):
+flights_with_fastest_airplane <- flights %>% 
+  filter(tailnum == fastest_airplane) 
+
+# Create the tibble:
+flights_b_tib <- flights_with_fastest_airplane %>%
+  mutate(count = nrow(flights_with_fastest_airplane),
+         mean_of_speed = fastest_speed) %>%
+  select(tailnum, mean_of_speed, count)
+
+# Output the tibble:
+flights_b_tib 
+```
+
+### References
+
+https://cran.r-project.org/web/packages/nycflights13/nycflights13.pdf
+
+https://en.wikipedia.org/wiki/Rafael_Hern%C3%A1ndez_Airport
+
+https://en.wikipedia.org/wiki/Luis_Mu%C3%B1oz_Mar%C3%ADn_International_Airport
+
+https://en.wikipedia.org/wiki/Mercedita_International_Airport
+
+https://en.wikipedia.org/wiki/Cyril_E._King_Airport
+
+## Q2
+
+```{r}
+# Import the data
+nnmaps <- read.csv("https://dept.stat.lsa.umich.edu/~jerrick/courses/stat506/data/chicago-nmmaps.csv")
+```
+
+```{r}
+#' Title: request the average temperature for a given month
+#'
+#' @param month Month, either a numeric 1-12 or a string.
+#' @param year A numeric year.
+#' @param data The data set to obtain data from.
+#' @param celsius Logically indicating whther the results should be in celsius. Default FALSE.
+#' @param average_fn A function with which to compute the mean. Default is mean.
+#'
+#' @return average temperature, a numeric vector of length 1 or reasonable error.
+#' @export
+#'
+#' @examples
+get_temp <- function(month, year, data, celsius = FALSE, average_fn = mean){
+  
+  # Rename the column in dataset to make it different from input.
+  data <- data %>% rename("m" = "month", "y" = "year")
+  
+  # Sanitize inputs
+  if (!is.numeric(year) || year < 0) {
+    return("Sorry, but year must be a positive numeric value.")
+  }
+  
+  if (!year %in% 1997:2000) {
+    return("Sorry, we don't have data for such year :(")
+  }
+  
+  if(!is.data.frame(data)){
+    return("Sorry...we only allow you to input a valid dataset as `data`")
+  }
+  
+  if(!is.logical(celsius)){
+    return("Sorry...please enter a logical input for `celsius`")
+  }
+  
+  if(!is.function(average_fn)){
+    return("Sorry...we only allow you to enter a valid function as `average_fn`")
+  }
+    
+  if (!is.numeric(month)) {
+    if (!month %in% c("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", 
+                      "Nov", "Dec", "January", "February", "March", "April", "June", "July", 
+                      "Augest", "September", "October", "November", "December")) {
+    return("Sorry, please input a valid month.")
+    }
+    # if the input of month is string, we are supposed to transfer from full name to short name
+    data_2 <- data %>% filter(m == substr(month, 1, 3)) 
+  }
+  
+  if (is.numeric(month)) {
+    if (!month %in% 1:12) {
+    return("Sorry but if month is a numeric value, it should be between 1 and 12.")
+    }
+    data_2 <- data %>% filter(month_numeric == month)
+  }
+  
+  # Filter by given year
+  data_3 <- data_2 %>% filter(y == year)
+  
+  # If there does not exist data for valid given month, we also input error.
+  if(nrow(data_3) == 0){
+    return("Sorry, but we have no data in such as given month.")
+  }
+  
+  # Drop rows without `temp` and compute `average_fn(temp)` as `avg_temp`.
+  result <- data_3 %>% 
+    filter(!is.na(temp)) %>% 
+    summarise(avg_temp = average_fn(temp))
+  
+  # If celsius == TRUE, change from Fahrenheit to Celsius.
+  if (celsius) {
+    result <- result %>% mutate(avg_temp = (avg_temp - 32) * (5/9))
+  }
+  
+  # Return the result
+  result$avg_temp %>% return
+}
+```
+
+```{r}
+# Test
+get_temp("Apr", 1999, data = nnmaps)
+get_temp("Apr", 1999, data = nnmaps, celsius = TRUE)
+get_temp(10, 1998, data = nnmaps, average_fn = median)
+get_temp(13, 1998, data = nnmaps)
+get_temp(2, 2005, data = nnmaps)
+get_temp("November", 1999, data =nnmaps, celsius = TRUE,
+         average_fn = function(x) {
+           x %>% sort -> x
+           x[2:(length(x) - 1)] %>% mean %>% return
+         })
+```
+## Q3
+
+```sas
+/* Input and output paths: ------------------------------------------------- */
+%let in_path = ~/hw4/input/;
+%let out_path = ~/hw4/output/;
+libname in_lib "&in_path."; 
+libname out_lib "&out_path.";
+
+/* Import dataset: ----------------------------------------------------------*/
+proc import datafile="&in_path.recs2020_public_v5_used_for_hw.csv" out=recs_2020;
+
+/* (a)[i] */
+
+/* Create a table as `recs_2020_state` to show the percentage of each state: */
+proc surveyfreq data=recs_2020;
+  tables state_name; 
+  ods output OneWay = recs_2020_state;
+  weight NWEIGHT; 
+
+/* Save the table `recs_2020_state` in out_lib : ----------------------------*/
+data out_lib.recs_2020_state; 
+  set recs_2020_state;
+run;
+
+/* Sort the table `recs_2020_state` by `Percent` from high to low : ---------*/
+proc sort data = out_lib.recs_2020_state
+  out=recs_2020_state;
+  by descending Percent;
+
+/* Since the highest percentage is the row representing 'Total', we re-set the 
+ * table begins from the second row: ----------------------------------------*/
+data recs_2020_state;
+  set recs_2020_state (firstobs=2);
+
+/* Select the state_name in first row, that is, the state with highest percentage*/
+proc print data=recs_2020_state(obs=1);      
+    var state_name;    
+
+run;
+
+/* (a)[ii] */
+
+/* Create dataset `michigan` by only selecting records from Michigan: -------*/
+data michigan;
+  set recs_2020_state;
+  where state_name = 'Michigan';
+
+/* Output the percentage of all records correspond to Michigan: -------------*/
+proc print data=michigan;      
+    var Percent;   
+
+run;
+
+/* (b) */
+
+/* Create dataset `valid_electricity` by only records with DOLLAREL > 0: ----*/
+data valid_electricity;
+  set recs_2020;
+  where DOLLAREL > 0;
+ 
+/* Save the table `valid_electricity` in out_lib : --------------------------*/ 
+data out_lib.recs_2020_valid_electricity;
+  set valid_electricity;
+  run;
+
+/* Generate a histogram of the log of the total electricity cost: -----------*/   
+title 'Total electricity cost in dollars';
+ods graphics on;
+proc univariate data=valid_electricity noprint;
+  var DOLLAREL;
+  histogram DOLLAREL / odstitle = title;
+run;
+
+/* (c) */
+
+/* Create dataset `valid_electricity_log` with log of DOLLAREL: -------------*/
+data valid_electricity_log;
+  set valid_electricity;
+  log_DOLLAREL = log(DOLLAREL);
+run;
+
+/* Generate a histogram of the log of the total electricity cost: -----------*/
+title 'Log of total electricity cost in dollars';
+ods graphics on;
+proc univariate data=valid_electricity_log noprint;
+  var log_DOLLAREL;
+  histogram log_DOLLAREL / odstitle = title;
+run;
+
+/* (d) */
+
+/* Create dataset `valid_electricity_log_for_reg` with mutating a new column `ROOM`,
+ * where ROOM = BEDROOMS + NCOMBATH + NHAFBATH + OTHROOMS -------------------*/
+ 
+/ * To be mentioned, the reason why we do not use TOTROOMS is this variable excludes 
+ * BATHROOMS, but the question requires us to use the number of rooms in the house */
+ 
+/ * We also omit PRKGPLC1 = "it is not applicable" since it may make effects on model */
+data valid_electricity_log_for_reg;
+  set valid_electricity_log;
+  where PRKGPLC1 >= 0;
+  ROOM = BEDROOMS + NCOMBATH + NHAFBATH + OTHROOMS;
+run;
+
+/* Generate the model and save the predictions as a new column `myPredictor`*/
+proc surveyreg data=valid_electricity_log_for_reg;
+  output out=myOutDataSet p=myPredictor;
+  model log_DOLLAREL = ROOM PRKGPLC1;
+  weight NWEIGHT;
+run;
+
+/*exp() the predictions and save the dataset in out_lib --------------------*/
+data out_lib.valid_electricity_log_prediction; 
+  set myOutDataSet;
+  pred_DOLLAREL = exp(myPredictor);
+run;
+
+/* (e) */
+
+/* Generate the scatter plot: ----------------------------------------------*/
+title 'Scatterplot of predictions vs actual data';
+ods graphics on;
+proc sgplot data=out_lib.valid_electricity_log_prediction;
+  scatter x=DOLLAREL y=pred_DOLLAREL;
+run;
+```
+
+### References
+
+https://go.documentation.sas.com/doc/zh-CN/pgmsascdc/v_044/statug/statug_surveyfreq_toc.htm?fromDefault=
+
+https://documentation.sas.com/doc/en/statcdc/14.2/statug/statug_ods_examples04.htm
+
+https://documentation.sas.com/doc/en/pgmsascdc/9.4_3.5/procstat/procstat_univariate_examples14.htm
+
+https://support.sas.com/documentation/onlinedoc/stat/141/surveyreg.pdf
+
+https://www.eia.gov/consumption/residential/data/2020/pdf/microdata-guide.pdf
+
+
+## Q4
+
+### (a)
+
+The Codebook may be generated by STATA
+
+### (b-c)
+
+```sas
+/* Input and output paths: ------------------------------------------------- */
+%let in_path = ~/hw4/input/;
+%let out_path = ~/hw4/output/;
+libname in_lib "&in_path."; 
+libname out_lib "&out_path.";
+
+/* (b) */
+
+/* Import dataset from in_lib as pub_2022: --------------------------------- */
+data pub_2022;
+  set in_lib.public2022;
+run;
+
+/* Use proc sql to generate the table included variables we need: ----------
+ * since we don't know whether `ppeducat` or `educ_4cat` is the better variable 
+ * for education in 4 categories (similar to `ppethm` and `race_5cat`), 
+ * we just select all of them and will remain the better fit two. 
+ * (based on following steps)------------------------------------------------*/
+proc sql;
+
+  create table pub_2022_b as
+  select B3, CaseID, weight_pop, ND2, B7_b, GH1, educ_4cat, race_5cat, ppeducat, ppethm
+  from pub_2022
+
+quit; 
+run;
+
+/* (c) */
+
+/* Get the data out of SAS and into Stata: --------------------------------- */
+/* First save the dataset in out_lib and then export manually: -------------*/
+
+data out_lib.pub_2022_output; 
+  set pub_2022_b;
+run;
+```
+
+### (d-g)
+
+```stata
+. do "/var/folders/9l/v77qk8hx3bd3340w4rt82j080000gn/T//SD57453.000000"
+
+. // set up
+. * save data as .dta since original data is filed as .sas7bdat
+. import sas /Users/wumanning/Downloads/pub_2022_output.sas7bdat, clear
+(10 vars, 11,667 obs)
+
+. save pub_2022_output, replace
+file pub_2022_output.dta saved
+
+. 
+. // (d)
+. display "number of variables is: " c(k)
+number of variables is: 10
+
+. display "number of observations is: " r(N) 
+number of observations is: 11667
+
+. 
+. * Conclusion: Since it is same as the codebook said, 
+. * we have successfully extracted the appropriate data. The reason why the 
+. * number of variables is 10 instead of 8 is that I choose both educ_4cat & 
+. * ppeducat and race_5cat & ppethm, where I will test which two can fit better.
+. 
+. 
+. // (e)
+. * Generate a new column for saving response variable as binary value
+. generate response_B3 = 0
+
+. 
+. * Set response_B3 = 0 if 1 <= B3 <= 2
+. replace response_B3 = 0 if B3 < 3
+(0 real changes made)
+
+. 
+. * Set response_B3 = 1 if 3 <= B3 <= 5
+. replace response_B3 = 1 if B3 > 2
+(7,371 real changes made)
+
+. 
+. //(f)
+. 
+. * Tell Stata that the data is from a complex sample
+. svyset CaseID [pw=weight_pop]
+
+Sampling weights: weight_pop
+             VCE: linearized
+     Single unit: missing
+        Strata 1: <one>
+ Sampling unit 1: CaseID
+           FPC 1: <zero>
+
+. * Generate a new column for merging people own their home with and without a mortgage.
+. generate new_GH1 = 0
+
+. 
+. * Set new_GH1 = 1 if they own their home
+. replace new_GH1 = 1 if GH1 < 3
+(7,915 real changes made)
+
+. 
+. * Set new_GH1 = 2 if they pay rent
+. replace new_GH1 = 2 if GH1 == 3
+(2,931 real changes made)
+
+. 
+. * Set new_GH1 = 3 if they neither own nor pay rent
+. replace new_GH1 = 3 if GH1 == 4
+(821 real changes made)
+
+.
+. * After processing all predictors successfully, generate the logistics model.
+.
+. * As it is difficult to clarify whether Likert Scale data is categorical data or not
+. * (https://www.researchgate.net/post/I_have_a_variable_that_is_measured_through_5_point
+. * _likert_scale_Should_it_be_considered_as_a_continuous_or_categorical_variable), I just 
+. * treat all Likert Scale data as non-categorical variable, because I believe numeric 
+. * values of Likert Scale data is meaningful. I only treat race and pay/rent/neither home 
+. * as categorical data.
+.
+. * To be mentioned, we choose `educ_4cat` for representing education but not `ppeducat` 
+. * is based on the following computing of R Squared. For convenience, I just choose the 
+. * predictor that can obtain maximal R Squared. Similar to `race_5cat`.
+.
+. svy: logit response_B3 ND2 B7_b i.new_GH1 educ_4cat i.race_5cat
+(running logit on estimation sample)
+
+Survey: Logistic regression
+
+Number of strata =      1                        Number of obs   =      11,667
+Number of PSUs   = 11,667                        Population size = 255,114,223
+                                                 Design df       =      11,666
+                                                 F(9, 11658)     =       94.75
+                                                 Prob > F        =      0.0000
+
+------------------------------------------------------------------------------
+             |             Linearized
+ response_B3 | Coefficient  std. err.      t    P>|t|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+         ND2 |   .0352918   .0304145     1.16   0.246    -.0243258    .0949094
+        B7_b |   .9693021    .036496    26.56   0.000     .8977639     1.04084
+             |
+     new_GH1 |
+          2  |   .0531211   .0543985     0.98   0.329    -.0535089    .1597512
+          3  |   .3704866   .0959522     3.86   0.000     .1824042     .558569
+             |
+   educ_4cat |    .106791   .0260306     4.10   0.000     .0557666    .1578154
+             |
+   race_5cat |
+          2  |    .712203   .0805835     8.84   0.000     .5542458    .8701602
+          3  |     .16532   .0711664     2.32   0.020      .025822    .3048179
+          4  |   .4535125   .1254932     3.61   0.000     .2075247    .6995002
+          5  |  -.0198644   .1623178    -0.12   0.903    -.3380345    .2983057
+             |
+       _cons |   -1.64358   .1379916   -11.91   0.000    -1.914067   -1.373093
+------------------------------------------------------------------------------
+
+. 
+. 
+. // Conclusion: Since the p-value of variable ND2 is larger than 0.05, that is, 
+. * ND2 is not siginificant in such model, the long-term concerns about climate change 
+. * may not impact current day concerns about financial stability.
+. 
+. //(g)
+. * Get the data out of Stata as csv file
+. export delimited using "pub_2022_output_after_Stata.csv", replace
+file pub_2022_output_after_Stata.csv saved
+
+. 
+. 
+end of do-file
+
+. 
+
+```
+
+### (h)
+
+```{r}
+#| warning: false
+library(haven)
+library(survey)
+# import data from stata
+df_pub_2022 <- read.csv("pub_2022_output_after_Stata.csv", sep=',', header = TRUE)
+```
+
+```{r}
+des <- svydesign(id = ~ CaseID, weight = ~ weight_pop, data = df_pub_2022)
+
+# Choose family = quasibinomial() to avoid a warning about non-integer numbers of successes
+# --------------------------------------------------------------------------------------------------
+# Actually, I try four combinations of `ppeducat` & `educ_4cat` (since both of them can 
+# represent education in 4 categories) and `ppethm` & `race_5cat` (since both of them can 
+# represent race in 5 categories), and finally find the combination of `educ_4cat` and 
+# `race_5cat` has the highest R squared. 
+# The code for comparison shows in the next chunk. To be mentioned, for convenience, 
+# I only choose `educ_4cat` and `race_5cat` for parts of predictors in stata.
+# --------------------------------------------------------------------------------------------------
+model_quasibin <- svyglm(response_B3 ~ 
+                           ND2 + B7_b + as.factor(new_GH1) + educ_4cat + 
+                           as.factor(race_5cat), 
+                    design=des, 
+                    family = quasibinomial())
+
+# We use the existed function `psrsq` for computing the psedufo-R Squared.
+print(paste("The psedufo-R Squared:", psrsq(model_quasibin)))
+```
+
+```{r}
+# Code for comparison, all following outputs have lower R Squared.
+# This part is not important, you can omit it.
+
+model_quasibin_2 <- svyglm(response_B3 ~ 
+                            ND2 + B7_b + as.factor(new_GH1) + ppeducat + 
+                            as.factor(race_5cat), 
+                    design=des, 
+                    family = quasibinomial())
+print(paste("The psedufo-R Squared for selecting ppeducat and race_5cat:", psrsq(model_quasibin_2)))
+
+model_quasibin_3 <- svyglm(response_B3 ~ 
+                            ND2 + B7_b + as.factor(new_GH1) + ppeducat + 
+                            as.factor(ppethm), 
+                    design=des, 
+                    family = quasibinomial())
+print(paste("The psedufo-R Squared for selecting ppeducat and ppethm:", psrsq(model_quasibin_3)))
+
+model_quasibin_4 <- svyglm(response_B3 ~ 
+                           ND2 + B7_b + as.factor(new_GH1) + educ_4cat + 
+                           as.factor(ppethm), 
+                    design=des, 
+                    family = quasibinomial())
+ print(paste("The psedufo-R Squared for selecting educ_4cat and ppethm:", psrsq(model_quasibin_4)))
+```
+
+### References
+
+https://cran.r-project.org/web/packages/survey/survey.pdf
+
+Lumley T (2017) "Pseudo-R2 statistics under complex sampling" Australian and New Zealand Journal of Statistics DOI: 10.1111/anzs.12187 (preprint: https://arxiv.org/abs/1701.07745)
