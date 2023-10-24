@@ -592,9 +592,10 @@ print(paste("The psedufo-R Squared:", psrsq(model_quasibin)))
 ```
 
 ```{r}
+# ----------------------------------------------------------------------------------------------
 # Code for comparison, all following outputs have lower R Squared.
-# This part is not important, you can omit it.
-
+# The following part is not important, you can omit it.
+# ----------------------------------------------------------------------------------------------
 model_quasibin_2 <- svyglm(response_B3 ~ 
                             ND2 + B7_b + as.factor(new_GH1) + ppeducat + 
                             as.factor(race_5cat), 
