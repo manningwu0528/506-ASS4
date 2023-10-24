@@ -4,6 +4,8 @@ author: "Manning Wu"
 format: pdf
 ---
 
+Github link: https://github.com/manningwu0528/506-ASS4
+
 ## Q1
 
 ```{r}
@@ -566,13 +568,14 @@ df_pub_2022 <- read.csv("pub_2022_output_after_Stata.csv", sep=',', header = TRU
 ```{r}
 des <- svydesign(id = ~ CaseID, weight = ~ weight_pop, data = df_pub_2022)
 
+# Re-fit the model in R, we can find this model is same as STATA's based on summary table.
 # Choose family = quasibinomial() to avoid a warning about non-integer numbers of successes
 # --------------------------------------------------------------------------------------------------
 # Actually, I try four combinations of `ppeducat` & `educ_4cat` (since both of them can 
 # represent education in 4 categories) and `ppethm` & `race_5cat` (since both of them can 
 # represent race in 5 categories), and finally find the combination of `educ_4cat` and 
 # `race_5cat` has the highest R squared. 
-# The code for comparison shows in the next chunk. To be mentioned, for convenience, 
+# The code for comparison shows in the following chunks. To be mentioned, for convenience, 
 # I only choose `educ_4cat` and `race_5cat` for parts of predictors in stata.
 # --------------------------------------------------------------------------------------------------
 model_quasibin <- svyglm(response_B3 ~ 
@@ -580,7 +583,10 @@ model_quasibin <- svyglm(response_B3 ~
                            as.factor(race_5cat), 
                     design=des, 
                     family = quasibinomial())
+summary(model_quasibin)
+```
 
+```{r}
 # We use the existed function `psrsq` for computing the psedufo-R Squared.
 print(paste("The psedufo-R Squared:", psrsq(model_quasibin)))
 ```
